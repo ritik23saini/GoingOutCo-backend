@@ -7,7 +7,7 @@ export const searchDates = async (req, res) => {
 
         const withdraw = await JoinRequest.findOneAndDelete({ eventId, users: { $in: [currentUserId] } }).lean();
         if (!withdraw) {
-            return res.status(404).json({ success: false, msg: "no join request found" });
+            return res.status(200).json({ success: false, msg: "no join request found" });
         }
         return res.status(200).json({ success: true, msg: "You have Withdrawn from event" });
 

@@ -1,28 +1,22 @@
-
 import express from 'express';
-import {  getOtherProfileDetails, sendOtp, signup, updateProfile, verifyOtp, } from '../controllers/userController.js';
-import { ensureAuth } from '../middlewares/ensureAuth.js';
+
+import { getMyProfile, updateProfile, getOtherProfileDetails } from '../controllers/profileController.js';
+
+
 import { updateFCMToken } from '../controllers/fcmToken.js';
+import { ensureAuth } from '../middlewares/ensureAuth.js';
+
 const userRouter = express.Router();
 
-userRouter.post("/signup", signup) //first user
-userRouter.post("/send-otp", sendOtp); //existing user
-userRouter.post("/verify-otp", verifyOtp);
-userRouter.post('/fcm-token', ensureAuth, updateFCMToken);
 
-//profile created at time of signup
+// (Protected) 
+userRouter.get('/myprofile', ensureAuth, getMyProfile);
 userRouter.put('/update-profile', ensureAuth, updateProfile);
-userRouter.get('/profile/:userId', ensureAuth, getOtherProfileDetails);
-
-//event route
+userRouter.get('/otherprofile/:userId', ensureAuth, getOtherProfileDetails);
 
 
-//dashboard apis
-//userRouter.get("/dashboard", ensureAuth, getUserEvents); //home
 
-
-//userRouter.get("/notifications", searchDates); //notifications
-
-
+// --- NOTIFICATIONS ---
+userRouter.post('/fcm-token', ensureAuth, updateFCMToken);
 
 export default userRouter;

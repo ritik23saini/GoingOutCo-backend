@@ -12,7 +12,7 @@ const joinRequestsSchema = new Schema({
         required: true
     },
     status: { type: String, enum: ["pending", "accepted", "rejected"], default: "pending" },
-    requestedAt: { type: Date, default: Date.now }
+   // requestedAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 
 joinRequestsSchema.index({ eventId: 1, users: 1 }, { unique: true }); //For a given event, the same user(s) cannot appear twice

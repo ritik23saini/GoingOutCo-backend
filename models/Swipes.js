@@ -19,5 +19,5 @@ const swipeSchema = new mongoose.Schema({
 swipeSchema.index({ swiperId: 1, swipedId: 1 }, { unique: true });
 swipeSchema.index({ swipedId: 1, action: 1 });
 
-const Swipe = mongoose.model("Swipe", swipeSchema) || mongoose.models.Swipe;
+const Swipe = mongoose.model("Swipe", swipeSchema)
 export default Swipe; 

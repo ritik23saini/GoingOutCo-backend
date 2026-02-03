@@ -8,5 +8,5 @@ const postEventRatingSchema = new mongoose.Schema({
     comment: String
 }, { timestamps: true });
 
-const PostEventRating = mongoose.model("PostEventRating", postEventRatingSchema) || mongoose.models.PostEventRating;
+const PostEventRating = mongoose.model("PostEventRating", postEventRatingSchema)
 export default PostEventRating;

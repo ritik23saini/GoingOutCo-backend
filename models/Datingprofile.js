@@ -24,8 +24,11 @@ const datingProfileSchema = new mongoose.Schema({
         workout: String
     },
 
-    city: { type: String, required: true },
+    city: { type: String },
     distancePreference: Number,
+    seeking: {
+        type: [String], enum: ["male", "female", "other"]
+    },
 
     isDating: { type: Boolean, default: true },
     lastActiveAt: Date,
@@ -41,5 +44,4 @@ const datingProfileSchema = new mongoose.Schema({
 datingProfileSchema.index({ isActive: 1, lastActiveAt: -1 });
 datingProfileSchema.index({ interests: 1 });
 
-export default mongoose.models.DatingProfile ||
-    mongoose.model("DatingProfile", datingProfileSchema);
+export default mongoose.model("DatingProfile", datingProfileSchema);
