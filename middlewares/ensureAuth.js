@@ -15,7 +15,7 @@ export const ensureAuth = async (req, res, next) => {
     try {
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findById(decoded.userId).select('-otp -otpExpiresAt');
+        const user = await User.findById(decoded.userId).select('_id phone name');
 
         if (!user) {
             return res.status(401).json({ success: false, msg: 'Invalid token' });

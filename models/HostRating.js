@@ -6,7 +6,7 @@ const HostRatingSchema = new Schema({
     ratingCount: { type: Number, default: 0 }
 });
 
-const HostRating = model("HostRating", HostRatingSchema) || mongoose.models.HostRating;
+const HostRating = model("HostRating", HostRatingSchema)
 export default HostRating;
 
 /* 

@@ -1,7 +1,8 @@
-import mongoose from "mongoose";
 // After confirmaton
 
-const attendeeSchema = new mongoose.Schema({
+import { model, Schema } from "mongoose";
+
+const attendeeSchema = new Schema({
 
     eventId: { type: Schema.Types.ObjectId, ref: "Event", required: true },
     users: [{ type: Schema.Types.ObjectId, ref: "User", required: true }], //1 or 2 user only
@@ -10,9 +11,9 @@ const attendeeSchema = new mongoose.Schema({
     paymentId: { type: Schema.Types.ObjectId, ref: "Payment" },
     // paidBy: { type: Schema.Types.ObjectId, ref: "User" },
     joinedAt: { type: Date, default: Date.now }
-
+    //ticketCode: { type: String, unique: true, required: true },
 
 }, { timestamps: true });
 attendeeSchema.index({ eventId: 1, users: 1 }, { unique: true }); //For a given event, the same user(s) cannot appear twice
-const Attendee = mongoose.model("Attendee", attendeeSchema) || mongoose.models.Attendee;
-export default Attendee; 
+const Attendees = model("Attendee", attendeeSchema)
+export default Attendees; 

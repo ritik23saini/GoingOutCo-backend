@@ -3,45 +3,22 @@ import Event from "../models/Event.js";
 import JoinRequest from "../models/JoinRequest.js";
 import mongoose from 'mongoose'
 import HostRating from "../models/HostRating.js";
+import FavoritesEvents from "../models/FavoritesEvents.js";
+import Attendees from "../models/Attendees.js";
+
 export const createEvent = async (req, res) => {
   try {
+
     const {
-      title,
-      description,
-      category,
-      hostId,
-      coverimage,
-      imageUrls = [],
-      location,
-      startAt,
-      endAt,
-      price,
-      isExclusive,
-      requestMode,
-      chatEnabled,
-      country,
-      currency,
-      currencySymbol,
-      status
+      title, description, category, coverimage, imageUrls = [],
+      location, startAt, endAt, price, country, currency, currencySymbol, status
     } = req.body;
+    const hostId = req.user._id;
+    console.log("req.body:", req.body, hostId);
 
-    //   field check
-    if (
-      !title ||
-      !description ||
-      !category ||
-      !hostId ||
-      !location ||
-      !location.coordinates ||
-      !startAt ||
-      !endAt
-    ) {
-      return res.status(400).json({
-        success: false,
-        msg: "Missing required fields"
-      });
+    if (!title || !description || !category || !location || !location.coordinates || !startAt || !endAt) {
+      return res.status(400).json({ success: false, msg: "Missing required fields" });
     }
-
     //  Date validation
     const startDate = new Date(startAt);
     const endDate = new Date(endAt);
@@ -53,11 +30,7 @@ export const createEvent = async (req, res) => {
       });
     }
 
-    //  Coordinates validation
-    if (
-      !Array.isArray(location.coordinates) ||
-      location.coordinates.length !== 2
-    ) {
+    if (!Array.isArray(location.coordinates) || location.coordinates.length !== 2) {
       return res.status(400).json({
         success: false,
         msg: "Coordinates must be [longitude, latitude]"
@@ -80,13 +53,22 @@ export const createEvent = async (req, res) => {
       },
       startAt: startDate,
       endAt: endDate,
-      price,
-      country,
-      currency,
-      currencySymbol,
-      status
+      price, country, currency, currencySymbol, status
     });
 
+    if (req.userSubscription) {
+      req.userSubscription.hostUsedThisMonth += 1;
+      await req.userSubscription.save();
+
+      /* 
+      it is not possible if .lean () was used on findone in middleware
+      This is the "magic" of Mongoose! It can be confusing because standard JavaScript objects don't work this way.
+
+      The secret is that req.userSubscription is NOT just a plain data object (like JSON). It is a Mongoose Document (Instance).
+
+      When your middleware ran UserSubscription.findOne(...), Mongoose didn't just fetch the data; it created a special "smart object" that remembers exactly where it came from in the database.
+      */
+    }
     return res.status(201).json({
       success: true,
       msg: "Event published successfully",
@@ -102,93 +84,9 @@ export const createEvent = async (req, res) => {
   }
 };
 
-export const getUserHostedEvent = async (req, res) => {
-  //from event model
-  const myUserId = req.user._id;
-  try {
-    const hostedEvent = await Event.find({ hostId: myUserId }).sort("createadAt").lean();
 
-    if (!hostedEvent) {
-      return res.status(400).json({ success: false, msg: "No event hosted" });
-    }
 
-    const requests = await JoinRequest.countDocuments({ eventId: hostedEvent._id });
-
-    let enrichedData = {
-      title,
-      description,
-      category,
-      coverimage,
-      startAt,
-      endAt,
-      requests,
-    };
-    return res.status(200).json({ success: true, data: hostedEvent });
-
-  } catch (error) {
-    console.log(error)
-    return res.status(500).json({ success: false, msg: "ERROR IN getUserHostedEvent" });
-  }
-}
-
-export const getJoinRequests = async (req, res) => {
-  const { eventId } = req.params;
-  const currentUserId = req.user._id;
-  const { partnerId /* = "696610aeff94f4eb99721467" */ } = req.body;
-  console.log(eventId, currentUserId, partnerId)
-  try {
-    // Find specific event by ID
-    const event = await Event.findById(eventId).lean();
-    if (!event) {
-      return res.status(404).json({ success: false, msg: "Event not found" });
-    }
-
-    let users = [currentUserId];
-    if (partnerId) {
-      if (!mongoose.Types.ObjectId.isValid(partnerId)) {
-        return res.status(400).json({ success: false, msg: "Invalid partner ID" });
-      }
-      users.push(partnerId);
-    }
-    console.log("users", users)
-    const checkExistingRequest = await JoinRequest.findOne({ eventId, users: { $in: users } })
-
-    if (checkExistingRequest) {
-      return res.status(403).json({ success: false, msg: "Request already sent" });
-    }
-    // Validate partner if provided
-
-    if (event.price === 0 && event.entryType === "invite-only") {
-      console.log("event")
-      const joinRequest = await JoinRequest.create({
-        eventId,
-        users,
-        joinedAs: users.length === 2 ? "couple" : "single"
-      });
-
-      return res.status(201).json({
-        success: true,
-        msg: "Join request sent",
-        // data: joinRequest
-      });
-    }
-    else {
-      // Paid events → redirect to payment flow
-      return res.status(200).json({
-        success: true,
-        msg: "Proceed to payment",
-        price: event.price,
-        isPaidEvent: true
-      });
-    }
-
-  } catch (error) {
-    console.error("withdraw event error:", error.message)
-    return res.status(500).json({ success: false, msg: "ERROR IN withdrawEvent" });
-  }
-};
-
-export const getUserEvents = async (req, res) => {
+export const getmanageEvents = async (req, res) => {
   const currentUserId = req.user._id;
   const { type, limit = 10, page = 1 } = req.query;
 
@@ -199,19 +97,38 @@ export const getUserEvents = async (req, res) => {
   switch (type) {
     case 'hosted':
       // User's hosted events
-      events = await Event.find({
-        hostId: currentUserId
-      })
-        //.populate('hostId', 'name')
-        //.select('hostId name')
-        .sort({ updatedAt: -1, createdAt: -1 })
-        .limit(limit * 1)
-        .skip(skip)
-        .lean();
 
-      /*  let enrichedData = event.map(e => {
- 
-       }) */
+
+      /*   events = await Event.find({
+          hostId: currentUserId
+        })
+          //.populate('hostId', 'name')
+          //.select('hostId name')
+          .sort({ updatedAt: -1, createdAt: -1 })
+          .limit(limit * 1)
+          .skip(skip)
+          .lean(); */
+
+      events = await Event.aggregate([
+        { $match: { hostId: new mongoose.Types.ObjectId(currentUserId) } },
+        {
+          $lookup: {
+            from: 'joinrequests',
+            localField: '_id',
+            foreignField: 'eventId',
+            as: 'joinRequests'
+          }
+        },
+        { $addFields: { requestCount: { $size: '$joinRequests' } } },
+        { $project: { title: 1, coverimage: 1, startAt: 1, endAt: 1, requestCount: 1, status: 1 } },
+        { $sort: { status: -1, updatedAt: -1, createdAt: -1 } },
+        //staus live then draft then completed reverse alphabeth with -1
+        { $skip: skip },
+        { $limit: limit * 1 }
+      ])
+
+      console.log("event1", events);
+
       break;
 
     case 'requested':
@@ -219,19 +136,25 @@ export const getUserEvents = async (req, res) => {
       events = await JoinRequest.find({
         users: currentUserId
       })
-        // .populate('hostId', 'name')
-        .sort({ requestedAt: -1 })
+        .populate('eventId', 'title coverimage startAt endAt')
+        .sort({ updatedAt: -1 })
         .limit(limit * 1)
         .skip(skip)
         .lean();
       break;
 
     case 'saved':
-      events = await Event.find({
-        hostId: currentUserId
-      })
-        // .populate('hostId', 'name')
+      //favourite model
+      const favRecords = await FavoritesEvents.find({ userId: currentUserId })
         .sort({ createdAt: -1 })
+        .lean();
+
+      // Extract event IDs
+      const favEventIds = favRecords.map(f => f.eventId);
+
+      // Fetch the actual Event details
+      events = await Event.find({ _id: { $in: favEventIds } })
+        .select('eventId title coverimage startAt endAt')
         .limit(limit * 1)
         .skip(skip)
         .lean();
@@ -264,20 +187,14 @@ const getTotalCount = async (type, currentUserId) => {
       });
 
     case 'saved':
-      //  FIX THIS - currently same as hosted!
-      // Add savedBy field to Event schema OR create SavedEvents collection
-      return await Event.countDocuments({
-        savedBy: currentUserId
-        // OR if using separate collection:
-        // SavedEvent.countDocuments({ userId: currentUserId })
-      });
+      return await FavoritesEvents.countDocuments({ userId: currentUserId });
 
     default:
       return 0;
   }
 };
 
-export const getEventDetails = async (req, res) => {
+export const getOtherEventDetails = async (req, res) => {
   const { eventId } = req.params;
 
   try {
@@ -285,7 +202,7 @@ export const getEventDetails = async (req, res) => {
       .populate('hostId', 'name profilePic')
       .lean();
     if (!event) {
-      return res.status(404).json({ success: false, msg: "event not found" });
+      return res.status(200).json({ success: false, msg: "event not found" });
     }
 
     const hostRating = await HostRating.findOne({ hostId: event.hostId }).select("-hostId").lean();
@@ -307,77 +224,237 @@ export const getEventDetails = async (req, res) => {
   }
 }
 
-export const joinEvent = async (req, res) => {
+
+export const getMyEventDetails = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const currentUserId = req.user._id;
+    let id = new mongoose.Types.ObjectId(eventId)
+    console.log(id, currentUserId)
+
+    const [event, acceptedCount, pendingCount] = await Promise.all([
+      Event.findOne({ _id: id, hostId: currentUserId }).populate("hostId", "name profilePic").select('-currentAttendee -isExclusive -boostMultiplier -boostTier'),
+      //  HostRating.findOne({ hostId: currentUserId }).select("-hostId").lean(),
+      Attendees.countDocuments({ eventId: id }),
+      JoinRequest.countDocuments({ eventId: id, status: "pending" }),
+    ]);
+
+    if (!event || event.length === 0) {
+      return res.status(404).json({ success: false, msg: "Event not found" });
+    }
+
+    const hostRating = await HostRating.findOne({ hostId: currentUserId }).select("-hostId").lean();
+
+    const hostDetails = {
+      name: event.hostId.name,
+      avg: hostRating?.ratingAvg || 0,
+      count: hostRating?.ratingCount || 0,
+    };
+
+    res.status(200).json({
+      success: true,
+      event: {
+        ...event.toObject(),// Convert mongoose doc to object
+        hostDetails,
+        stats: {
+          accepted: acceptedCount, // The "5" in your design
+          pending: pendingCount    // The "52" in your design
+        },
+        // myStatus // Helps frontend show "Requested" or "Join" button
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, msg: error.message });
+  }
+};
+
+export const toggleFavourite = async (req, res) => {
+  const { eventId } = req.params;
+  const userId = req.user._id;
+
+  try {
+    const exists = await FavoritesEvents.findOne({ userId, eventId });
+
+    if (exists) {
+      await FavoritesEvents.deleteOne({ _id: exists._id });
+
+      return res.status(200).json({
+        success: true,
+        isFavourite: false,
+        msg: "Removed from favourites",
+      });
+    }
+
+    await FavoritesEvents.create({ userId, eventId });
+
+    return res.status(200).json({
+      success: true,
+      isFavourite: true,
+      msg: "Added to favourites",
+    });
+
+  } catch (error) {
+    console.error("toggleFavourite error:", error.message);
+
+    // duplicate key safety (race condition)
+    if (error.code === 11000) {
+      return res.status(200).json({
+        success: true,
+        isFavourite: true,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      msg: "ERROR IN toggleFavourite",
+    });
+  }
+};
+
+
+export const deleteEventPost = async (req, res) => {
   const { eventId } = req.params;
   const currentUserId = req.user._id;
-  const { partnerId /* = "696610aeff94f4eb99721467" */ } = req.body;
-  console.log(eventId, currentUserId, partnerId)
+
+  // disucc when to delete event was thier attende already exist paid event then refund or not etc
+  //need more development not final api
   try {
-    // Find specific event by ID
-    const event = await Event.findById(eventId).lean();
+    const event = await Event.findOne({ _id: eventId, hostId: currentUserId });
+
     if (!event) {
       return res.status(404).json({ success: false, msg: "Event not found" });
     }
 
-    let users = [currentUserId];
-    if (partnerId) {
-      if (!mongoose.Types.ObjectId.isValid(partnerId)) {
-        return res.status(400).json({ success: false, msg: "Invalid partner ID" });
+    // 2. Delete the Event
+    await Event.findByIdAndDelete(eventId);
+
+    //  CONDITIONAL REFUND LOGIC
+    // ONLY decrement if the status was 'draft'. 
+    // Live, Completed, or Cancelled events count as "spent".
+    if (event.status === 'draft') {
+
+      const sub = await UserSubscription.findOne({ userId: currentUserId });
+
+      // Safety check: ensure we don't go below 0
+      if (sub && sub.hostUsedThisMonth > 0) {
+        sub.hostUsedThisMonth -= 1;
+        await sub.save();
+        console.log(`Refunded 1 credit to user ${currentUserId}`);
       }
-      users.push(partnerId);
     }
-    console.log("users", users)
-    const checkExistingRequest = await JoinRequest.findOne({ eventId, users: { $in: users } })
 
-    if (checkExistingRequest) {
-      return res.status(403).json({ success: false, msg: "Request already sent" });
-    }
-    // Validate partner if provided
-
-    if (event.price === 0 && event.entryType === "invite-only") {
-      console.log("event")
-      const joinRequest = await JoinRequest.create({
-        eventId,
-        users,
-        joinedAs: users.length === 2 ? "couple" : "single"
-      });
-
-      return res.status(201).json({
-        success: true,
-        msg: "Join request sent",
-        // data: joinRequest
-      });
-    }
-    else {
-      // Paid events → redirect to payment flow
-      return res.status(200).json({
-        success: true,
-        msg: "Proceed to payment",
-        price: event.price,
-        isPaidEvent: true
-      });
-    }
+    return res.status(200).json({
+      success: true,
+      msg: "Event deleted successfully",
+      refunded: event.status === 'draft' // Tell frontend if credit was returned
+    });
 
   } catch (error) {
-    console.error("Join event error:", error.message);
-    return res.status(500).json({ success: false, msg: "Server error" });
+    console.error("deleteEventPost error:", error.message);
+    return res.status(500).json({ success: false, msg: "Server Error" });
   }
 };
 
-export const withdrawEvent = async (req, res) => {
+// pause or update event 
+export const updateEventPost = async (req, res) => {
   const { eventId } = req.params;
   const currentUserId = req.user._id;
-  console.log(currentUserId)
-  try {
 
-    const withdraw = await JoinRequest.findOneAndDelete({ eventId, users: { $in: [currentUserId] } }).lean();
-    if (!withdraw) {
-      return res.status(404).json({ success: false, msg: "no join request found" });
+  const allowedFields = [
+    "title", "description", "category", "coverimage", "imageUrls",
+    "location", "startAt", "endAt", "entryType", "price", "status"
+  ];
+
+  if (!req.body || Object.keys(req.body).length === 0) {
+    return res.status(400).json({ success: false, msg: "Empty body" });
+  }
+
+  if (req.userSubscription) {
+    req.userSubscription.hostUsedThisMonth += 1;
+    await req.userSubscription.save();
+  }
+  try {
+    const event = await Event.findOne({ _id: eventId, hostId: currentUserId });
+
+    if (!event) {
+      return res.status(404).json({ success: false, msg: "Event not found or unauthorized" });
     }
-    return res.status(200).json({ success: true, msg: "You have Withdrawn from event" });
+
+    for (const key of allowedFields) {
+      if (req.body[key] !== undefined) {
+        event[key] = req.body[key];
+      }
+    }
+
+    const startDate = new Date(event.startAt);
+    const endDate = new Date(event.endAt);
+
+    if (startDate >= endDate) {
+      return res.status(400).json({ success: false, msg: "End date must be after Start date" });
+    }
+
+
+    if (req.body.location) {
+      if (!Array.isArray(event.location.coordinates) || event.location.coordinates.length !== 2) {
+        return res.status(400).json({ success: false, msg: "Coordinates must be [longitude, latitude]" });
+      }
+    }
+
+
+    const updatedEvent = await event.save();
+
+    return res.status(200).json({
+      success: true,
+      msg: "Event updated successfully",
+      data: updatedEvent,
+    });
 
   } catch (error) {
-    console.error("withdraw event error:", error.message)
-    return res.status(500).json({ success: false, msg: "ERROR IN withdrawEvent" });
+    console.error("updateEvent error:", error.message);
+    return res.status(500).json({ success: false, msg: "Server Error" });
   }
 };
+
+export const getallEvent = async (req, res) => {
+  const params = req.query
+
+  try {
+
+    const event = await Event.find().lean();
+    if (!event) {
+      return res.status(200).json({ success: false, msg: "event not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: event
+    });
+
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, msg: "ERROR IN getEventDetails" });
+  }
+}
+
+export const getEventByLocation = async (req, res) => {
+
+  const { search, page, limit, date, distance, price } = req.query
+
+  try {
+    const event = await Event.find().lean();
+    if (!event) {
+      return res.status(200).json({ success: false, msg: "event not found" });
+    }
+
+
+    return res.status(200).json({
+      success: true,
+      data: event
+    });
+
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, msg: "ERROR IN getEventDetails" });
+  }
+}

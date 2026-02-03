@@ -26,6 +26,5 @@ Without normalization, these two documents are DIFFERENT to MongoDB:
 */
 
 matchedSchema.index({ user1Id: 1, user2Id: 1 }, { unique: true }); //This guarantees 1 match document per pair.
-const Matches = mongoose.model("Matches", matchedSchema) || mongoose.models.Matches;
-
-export default Matches;  
+const Matches = mongoose.model("Matches", matchedSchema)
+export default Matches;
