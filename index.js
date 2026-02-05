@@ -7,11 +7,13 @@ import userRouter from './routes/userRouter.js';
 import eventRouter from './routes/eventRouter.js';
 import { datingRouter } from './routes/datingRouter.js';
 import authRouter from './routes/authRouter.js';
+import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 configDotenv();
 
 const app = express();
 // Enable this if you are behind a reverse proxy (Heroku, Bluemix, AWS ELB, Nginx, etc)
-//app.set('trust proxy', 1);
+//app.set('trust proxy', 1); //for rate limiting 
 const PORT = process.env.PORT;
 
 /* const globalLimiter = rateLimit({
@@ -23,11 +25,11 @@ const PORT = process.env.PORT;
     },
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-}); */
+});  */
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-//app.use(cors());
+app.use(cors());
 
 
 //app.use(globalLimiter); // This must be placed BEFORE your routes

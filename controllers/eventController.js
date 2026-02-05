@@ -11,12 +11,12 @@ export const createEvent = async (req, res) => {
 
     const {
       title, description, category, coverimage, imageUrls = [],
-      location, startAt, endAt, price, country, currency, currencySymbol, status
+      location, startAt, endAt, price, country, currency, currencySymbol, status, maxAttendee
     } = req.body;
     const hostId = req.user._id;
     console.log("req.body:", req.body, hostId);
 
-    if (!title || !description || !category || !location || !location.coordinates || !startAt || !endAt) {
+    if (!title || !description || !category || !location || !location.coordinates || !startAt || !endAt || !maxAttendee) {
       return res.status(400).json({ success: false, msg: "Missing required fields" });
     }
     //  Date validation
@@ -53,6 +53,7 @@ export const createEvent = async (req, res) => {
       },
       startAt: startDate,
       endAt: endDate,
+      maxAttendee,
       price, country, currency, currencySymbol, status
     });
 

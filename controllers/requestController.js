@@ -31,7 +31,7 @@ export const getEventRequests = async (req, res) => {
     }
 };
 
-export const joinEvent = async (req, res) => {
+export const sendEventrequest = async (req, res) => {
     const { eventId } = req.params;
     const currentUserId = req.user._id;
     const { partnerId /* = "696610aeff94f4eb99721467" */ } = req.body;
@@ -63,7 +63,8 @@ export const joinEvent = async (req, res) => {
             const joinRequest = await JoinRequest.create({
                 eventId,
                 users,
-                joinedAs: users.length === 2 ? "couple" : "single"
+                joinedAs: users.length === 2 ? "couple" : "single",
+                status: "pending"
             });
 
             return res.status(201).json({
@@ -91,73 +92,153 @@ export const joinEvent = async (req, res) => {
 export const withdrawEvent = async (req, res) => {
     const { eventId } = req.params;
     const currentUserId = req.user._id;
-    console.log(currentUserId)
-    try {
-
-        const withdraw = await JoinRequest.findOneAndDelete({ eventId, users: { $in: [currentUserId] } }).lean();
-        if (!withdraw) {
-            return res.status(200).json({ success: false, msg: "no join request found" });
-        }
-        return res.status(200).json({ success: true, msg: "You have Withdrawn from event" });
-
-    } catch (error) {
-        console.error("withdraw event error:", error.message)
-        return res.status(500).json({ success: false, msg: "ERROR IN withdrawEvent" });
-    }
-};
-
-//accept/reject multiple join requests
-export const handleJoinRequests = async (req, res) => {
 
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-        const { requests } = req.body; // Array of { request_id, status }
+        //  remove a Confirmed Ticket (Attendee) first
+
+        const removedAttendee = await Attendees.findOneAndDelete({
+            eventId,
+            users: currentUserId
+        }).session(session);
+
+        if (removedAttendee) {
+
+            const headcountToRemove = removedAttendee.users.length; // 1 or 2
+
+            await Event.findByIdAndUpdate(
+                eventId,
+                { $inc: { currentAttendee: -headcountToRemove } },
+                { session }
+            );
+
+
+            await JoinRequest.findOneAndDelete({
+                eventId,
+                users: currentUserId
+            }).session(session);
+
+            await session.commitTransaction();
+            return res.status(200).json({ success: true, msg: "Ticket cancelled. You have withdrawn." });
+        }
+
+        // If no ticket, try to remove a Pending Request
+        const removedRequest = await JoinRequest.findOneAndDelete({
+            eventId,
+            users: currentUserId
+        }).session(session);
+
+        if (removedRequest) {
+            // We do NOT decrement count because they never took a spot!
+
+            await session.commitTransaction();
+            return res.status(200).json({ success: true, msg: "Join request withdrawn successfully." });
+        }
+
+        // STEP 3: Neither found
+        await session.abortTransaction();
+        return res.status(404).json({ success: false, msg: "You have not joined this event." });
+
+    } catch (error) {
+        console.error("withdraw event error:", error);
+        await session.abortTransaction();
+        return res.status(500).json({ success: false, msg: "Error processing withdrawal" });
+    } finally {
+        session.endSession();
+    }
+};
+
+//accept/reject multiple join requests 
+// for free-invite event only
+export const handleJoinRequests = async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const { eventId, requests } = req.body;
+
+        // 1. Fetch Event
+        const event = await Event.findById(eventId).session(session);
+        if (!event) {
+            await session.abortTransaction();
+            return res.status(404).json({ success: false, msg: "Event not found" });
+        }
 
         if (!requests || requests.length === 0) {
             return res.status(400).json({ success: false, msg: "No requests provided" });
         }
 
+        // 2. Separate the "Accepted" requests to check capacity
+        // We ignore "rejected" ones for capacity calculation
+        const requestsToAccept = requests.filter(r => r.status === "accepted");
+        const requestIdsToAccept = requestsToAccept.map(r => r.request_id);
+        console.log("docsToCheck:", requestsToAccept, requestIdsToAccept);
+
+        let totalPeopleToAdd = 0;
+
+        // Only do strict checks if we are actually accepting someone
+        if (requestIdsToAccept.length > 0) {
+            // Fetch the full documents to see how many people are in each request (Single vs Couple)
+            const docsToCheck = await JoinRequest.find({ _id: { $in: requestIdsToAccept } }).session(session);
+            console.log("docsToCheck:", docsToCheck);
+
+            // Calculate headcount (e.g., Couple = 2 people)
+            totalPeopleToAdd = docsToCheck.reduce((acc, req) => acc + req.users.length, 0);
+            console.log("Total People to Add:", totalPeopleToAdd);
+
+            // Check Capacity
+            if (event.currentAttendee + totalPeopleToAdd > event.maxAttendee) {
+                await session.abortTransaction();
+                return res.status(400).json({
+                    success: false,
+                    msg: `Capacity exceeded! You selected ${totalPeopleToAdd} people, but only ${event.maxAttendee - event.currentAttendee} spots are left.`
+                });
+            }
+
+            //  Create Attendees (Only for Accepted)
+
+            const newAttendees = docsToCheck.map(reqDoc => ({
+                eventId: reqDoc.eventId,
+                users: reqDoc.users,
+                joinedAs: reqDoc.joinedAs,
+                status: "going",
+                paymentStatus: "free",
+                ticketCode: `GO-${Date.now().toString().slice(-4)}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`,
+            }));
+
+            const insertedAttendees = await Attendees.insertMany(newAttendees, { session });
+
+            console.log("Inserted Attendees:", insertedAttendees);
+
+            // 4. Update Event Count (Only for Accepted)
+            await Event.findOneAndUpdate(
+                { _id: eventId },
+                { $inc: { currentAttendee: totalPeopleToAdd } },
+                { session }
+            );
+        }
+
+        //  marks rejected users as "rejected" and accepted ones as "accepted" in one go
         const bulkOps = requests.map((reqItem) => ({
             updateOne: {
-                filter: { _id: reqItem.request_id }, // Target by unique Request ID
+                filter: { _id: reqItem.request_id },
                 update: { status: reqItem.status }
             }
         }));
 
-        // Execute all status updates in one go
         await JoinRequest.bulkWrite(bulkOps, { session });
 
-        // Move to Attendee Table
-        const acceptedRequestsIds = requests
-            .filter(r => r.status === "accepted")
-            .map(r => r.request_id);
-
-        if (acceptedRequestsIds.length > 0) {
-            // Fetch the full request details for these IDs to get user/event info
-            const fullRequests = await JoinRequest.find({ _id: { $in: acceptedRequestsIds } }).session(session);
-
-            // Create Attendee documents
-            const newAttendees = fullRequests.map(reqDoc => ({
-                eventId: reqDoc.eventId,
-                users: reqDoc.users, // Copy the array of users (1 or 2)
-                joinedAs: reqDoc.joinedAs,
-                //ticketCode: `TICKET-${Date.now()}-${Math.floor(Math.random() * 1000)}`, // Generate unique code
-                //status: "going",
-                paymentStatus: "free" // Default to free
-            }));
-
-            // Insert all new attendees at once
-            await Attendees.insertMany(newAttendees, { session });
-        }
-
         await session.commitTransaction();
-        res.status(200).json({ success: true, msg: "Attendees confirmed successfully" });
+        res.status(200).json({ success: true, msg: "Requests processed successfully" });
 
     } catch (error) {
         await session.abortTransaction();
-        console.error("Bulk Update Error:", error);
+        console.error("Handle Requests Error:", error.message);
+        if (error.code === 11000) {
+            return res.status(400).json({ success: false, msg: "One or more users are already on the attendee list." });
+        }
         res.status(500).json({ success: false, msg: error.message });
     } finally {
         session.endSession();

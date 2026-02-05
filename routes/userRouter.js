@@ -5,6 +5,8 @@ import { getMyProfile, updateProfile, getOtherProfileDetails } from '../controll
 
 import { updateFCMToken } from '../controllers/fcmToken.js';
 import { ensureAuth } from '../middlewares/ensureAuth.js';
+import { SupportMessage } from '../controllers/authController.js';
+import { getDashboardEvents } from '../controllers/dashboardController.js';
 
 const userRouter = express.Router();
 
@@ -18,5 +20,9 @@ userRouter.get('/otherprofile/:userId', ensureAuth, getOtherProfileDetails);
 
 // --- NOTIFICATIONS ---
 userRouter.post('/fcm-token', ensureAuth, updateFCMToken);
+
+
+userRouter.get('/dashboard', /* ensureAuth ,*/ getDashboardEvents);
+userRouter.post('/support', ensureAuth, SupportMessage);
 
 export default userRouter;

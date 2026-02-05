@@ -20,7 +20,7 @@ const eventsSchema = new mongoose.Schema({
   endAt: { type: Date, required: true },
 
   currentAttendee: { type: Number, default: 0 },
-  maxAttendee: { type: Number }, // Optional limit
+  maxAttendee: { type: Number, required: true },
 
   entryType: {
     type: String,

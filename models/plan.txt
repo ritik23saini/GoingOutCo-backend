@@ -4,12 +4,12 @@ FREE (Default):
 
 BASIC PLUS (₹199):
 ├─ Events: 5 hosting, 3 boosts (2x), 0 featured  
-└─ Dating: 20 swipes/day, 3 super likes
+└─ Dating: 20 swipes/day
 
 PREMIUM (₹499):
 ├─ Events: 15 hosting, 8 boosts (4x), 3 featured
-└─ Dating: 50 swipes/day, 7 super likes
+└─ Dating: 50 swipes/day
 
 ELITE (₹999):
 ├─ Events: 50 hosting, 15 boosts (10x), 8 featured
-└─ Dating: 100 swipes/day, 10 super likes
+└─ Dating: 100 swipes/day
