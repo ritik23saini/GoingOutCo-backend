@@ -1,66 +1,7 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import { sendOtpViaCall, sendOtpViaSms } from '../utils/twilioService.js';
-
-/* export const signup = async (req, res) => {
-  try {
-    const { phone, username, gender, dob, city, countryCode = "+91" } = req.body;
-
-   
-    if (!phone || phone.length < 10 || !username || !gender || !dob || !city) {
-      return res.status(401).json({
-        msg: "All fields required && phone too",
-
-      });
-    }
-    const existinguser = await User.findOne({ phone });
-    if (existinguser) {
-      return res.status(400).json({
-        success: false,
-        error: "Phone number already registered"
-      });
-    }
-  
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    const now = new Date();
-
-    user.otp = otp;
-    user.otpExpiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 mins
-    user.lastOtpSentAt = now; 
-
-    await user.save();
-
-    const fullPhoneNumber = user.countryCode + user.phone;
-    await sendOtpViaSms(fullPhoneNumber, otp);
-
-
-    const user = new User({
-      phone,
-      countryCode,
-      name: username,
-      gender,
-      dob,
-      city
-    });
-
-
-    return res.status(201).json({
-      success: true,
-      msg: "User created & OTP sent",
-      otp, // Remove in production
-      userId: user._id
-    });
-
-
-
-  } catch (error) {
-    console.error(error.message)
-    res.status(500).json({
-      success: false,
-      msg: "user creation failed"
-    });
-  }
-}; */
+import SupportQuery from '../models/supportQuery.js';
 
 // resent otp  /login
 export const sendOtp = async (req, res) => {
@@ -218,6 +159,30 @@ export const completeSignup = async (req, res) => {
 
     return res.status(200).json({ success: true, msg: "Profile Setup Complete ,Welcome!" });
 
+  } catch (error) {
+    res.status(500).json({ success: false, msg: error.message });
+  }
+}
+
+export const SupportMessage = async (req, res) => {
+
+  try {
+    const { message } = req.body;
+    const currentUserId = req.user._id;
+    if (!message) {
+      return res.status(400).json({ msg: "message field is required" });
+    }
+    const user = await User.findById(currentUserId).lean();
+    if (!user) return res.status(404).json({ msg: "User not found" });
+    const newSupportQuery = new SupportQuery({
+      name: user.name,
+      userId: currentUserId,
+      message: message,
+      status: "open"
+    });
+
+    await newSupportQuery.save();
+    return res.status(200).json({ success: true, msg: "Support query submitted. We'll get back to you soon!" });
   } catch (error) {
     res.status(500).json({ success: false, msg: error.message });
   }
